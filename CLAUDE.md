@@ -113,6 +113,7 @@ This repository includes specialized Claude agents in `.claude/agents/`:
 - **esxi-ubuntu-specialist**: ESXi expertise and command planning
 - **safety-reviewer**: Security and production readiness review
 - **implementation-assistant**: Active development and testing
+- **testing-architect**: Test strategy, verification plans, and quality assurance
 
 Use these agents for focused expertise in their respective domains.
 
