@@ -1,0 +1,26 @@
+name: Chaos Tests
+
+on:
+  schedule:
+    # Run chaos tests every Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Install dependencies
+      run: go mod download
+    
+    - name: Run chaos tests
+      run: |
+        echo "Chaos tests - stub implementation for Phase 1"
+        echo "Will be implemented in Phase 2 with actual ESXi integration"
