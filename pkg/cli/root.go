@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/r11/esxi-commander/pkg/cli/backup"
+	"github.com/r11/esxi-commander/pkg/cli/pci"
 	"github.com/r11/esxi-commander/pkg/cli/setup"
 	"github.com/r11/esxi-commander/pkg/cli/template"
 	"github.com/r11/esxi-commander/pkg/cli/vm"
@@ -41,6 +42,7 @@ func init() {
 	rootCmd.AddCommand(vm.VmCmd)
 	rootCmd.AddCommand(backup.BackupCmd)
 	rootCmd.AddCommand(template.TemplateCmd)
+	rootCmd.AddCommand(pci.PciCmd)
 	rootCmd.AddCommand(setup.SetupCmd)
 }
 

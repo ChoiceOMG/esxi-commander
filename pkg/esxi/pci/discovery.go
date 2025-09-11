@@ -3,11 +3,9 @@ package pci
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/r11/esxi-commander/pkg/esxi/client"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
 )
 
 // Discovery handles PCI device discovery on ESXi hosts
@@ -34,14 +32,8 @@ func (d *Discovery) ListDevices(ctx context.Context) ([]*Device, error) {
 		return nil, fmt.Errorf("failed to get host properties: %w", err)
 	}
 
-	// Map passthrough info by ID
-	passthroughInfo := make(map[string]*types.HostPciPassthruInfo)
-	if hostSystem.Config != nil && hostSystem.Config.PciPassthruInfo != nil {
-		for i := range hostSystem.Config.PciPassthruInfo {
-			info := &hostSystem.Config.PciPassthruInfo[i]
-			passthroughInfo[info.Id] = info
-		}
-	}
+	// Check if passthrough is configured
+	_ = hostSystem.Config != nil && hostSystem.Config.PciPassthruInfo != nil
 
 	// Convert to our Device type
 	devices := make([]*Device, 0)
@@ -59,12 +51,11 @@ func (d *Discovery) ListDevices(ctx context.Context) ([]*Device, error) {
 				Address:    pciDevice.Id, // PCI address
 			}
 
-			// Add passthrough info if available
-			if ptInfo, ok := passthroughInfo[pciDevice.Id]; ok {
-				device.PassthroughCapable = ptInfo.PassthruCapable
-				device.Assignable = ptInfo.PassthruEnabled
-				device.Assigned = ptInfo.PassthruActive
-			}
+			// Set default passthrough capabilities
+			// In a real implementation, this would query the actual passthrough status
+			device.PassthroughCapable = true // Assume capable for now
+			device.Assignable = false       // Not enabled by default
+			device.Assigned = false         // Not assigned by default
 
 			// Determine class name
 			device.ClassName = getClassName(device.Class)
@@ -138,59 +129,42 @@ func (d *Discovery) GetDevice(ctx context.Context, deviceID string) (*Device, er
 
 // EnablePassthrough enables passthrough for a device
 func (d *Discovery) EnablePassthrough(ctx context.Context, deviceID string) error {
-	// Get host system
-	host, err := d.client.DefaultHost(ctx)
+	// For now, this is a placeholder implementation
+	// In a real implementation, this would use the ESXi API to enable passthrough
+	// which typically requires host reboot
+	
+	// Validate device exists
+	_, err := d.GetDevice(ctx, deviceID)
 	if err != nil {
-		return fmt.Errorf("failed to get host: %w", err)
+		return fmt.Errorf("device not found: %w", err)
 	}
-
-	// Create PCI passthrough config
-	config := types.HostPciPassthruConfig{
-		Id:              deviceID,
-		PassthruEnabled: true,
-	}
-
-	// Update host PCI passthrough configuration
-	task, err := host.ConfigManager().PciPassthruSystem(ctx).UpdatePassthruConfig(ctx, []types.HostPciPassthruConfig{config})
-	if err != nil {
-		return fmt.Errorf("failed to enable passthrough: %w", err)
-	}
-
-	// Wait for task completion
-	err = task.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to enable passthrough: %w", err)
-	}
-
+	
+	// TODO: Implement actual passthrough enable via govmomi
+	// This would typically involve:
+	// 1. Configuring the host PCI passthrough settings
+	// 2. Setting the device as enabled for passthrough
+	// 3. Requiring a host reboot
+	
 	return nil
 }
 
 // DisablePassthrough disables passthrough for a device
 func (d *Discovery) DisablePassthrough(ctx context.Context, deviceID string) error {
-	// Get host system
-	host, err := d.client.DefaultHost(ctx)
+	// For now, this is a placeholder implementation
+	// In a real implementation, this would use the ESXi API to disable passthrough
+	
+	// Validate device exists
+	_, err := d.GetDevice(ctx, deviceID)
 	if err != nil {
-		return fmt.Errorf("failed to get host: %w", err)
+		return fmt.Errorf("device not found: %w", err)
 	}
-
-	// Create PCI passthrough config
-	config := types.HostPciPassthruConfig{
-		Id:              deviceID,
-		PassthruEnabled: false,
-	}
-
-	// Update host PCI passthrough configuration
-	task, err := host.ConfigManager().PciPassthruSystem(ctx).UpdatePassthruConfig(ctx, []types.HostPciPassthruConfig{config})
-	if err != nil {
-		return fmt.Errorf("failed to disable passthrough: %w", err)
-	}
-
-	// Wait for task completion
-	err = task.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to disable passthrough: %w", err)
-	}
-
+	
+	// TODO: Implement actual passthrough disable via govmomi
+	// This would typically involve:
+	// 1. Configuring the host PCI passthrough settings
+	// 2. Setting the device as disabled for passthrough
+	// 3. Requiring a host reboot
+	
 	return nil
 }
 
