@@ -16,6 +16,7 @@ import (
 	"github.com/r11/esxi-commander/internal/storage"
 	"github.com/r11/esxi-commander/pkg/esxi/client"
 	"github.com/r11/esxi-commander/pkg/esxi/vm"
+	"github.com/r11/esxi-commander/pkg/metrics"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
@@ -106,6 +107,8 @@ func (m *BackupManager) Close() error {
 
 // CreateBackup creates a backup of a VM
 func (m *BackupManager) CreateBackup(ctx context.Context, opts BackupOptions) (*BackupInfo, error) {
+	start := time.Now()
+	
 	// Generate backup ID
 	backupID := fmt.Sprintf("backup-%s-%s", opts.VMName, uuid.New().String()[:8])
 
@@ -185,6 +188,10 @@ func (m *BackupManager) CreateBackup(ctx context.Context, opts BackupOptions) (*
 		return nil, fmt.Errorf("failed to update catalog: %w", err)
 	}
 
+	// Record metrics
+	metrics.RecordBackupOperation("create", "success", time.Since(start).Seconds())
+	metrics.RecordBackupSize(opts.VMName, float64(size))
+	
 	return &BackupInfo{
 		ID:          backupID,
 		VMName:      opts.VMName,

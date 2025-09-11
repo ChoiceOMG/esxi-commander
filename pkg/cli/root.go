@@ -10,6 +10,7 @@ import (
 	"github.com/r11/esxi-commander/pkg/cli/backup"
 	"github.com/r11/esxi-commander/pkg/cli/template"
 	"github.com/r11/esxi-commander/pkg/cli/vm"
+	"github.com/r11/esxi-commander/pkg/security"
 )
 
 var (
@@ -60,4 +61,19 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
+	
+	// Initialize security sandbox
+	mode := security.ModeStandard // Default mode
+	if viper.IsSet("security.mode") {
+		modeStr := viper.GetString("security.mode")
+		switch modeStr {
+		case "restricted":
+			mode = security.ModeRestricted
+		case "unrestricted":
+			mode = security.ModeUnrestricted
+		default:
+			mode = security.ModeStandard
+		}
+	}
+	security.Initialize(mode)
 }
