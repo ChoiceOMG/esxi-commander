@@ -1,0 +1,41 @@
+# ESXi Commander Configuration Example
+# Copy this to ~/.ceso/config.yaml and update with your values
+
+esxi:
+  host: 192.168.1.10          # ESXi host IP or hostname
+  user: root                   # ESXi username
+  password: ${ESXI_PASSWORD}   # Use environment variable for security
+  insecure: true              # Allow self-signed certificates
+  
+defaults:
+  template: ubuntu-22.04-template
+  datastore: datastore1
+  network: VM Network
+  cpu: 2
+  ram: 4
+  disk: 40
+
+# Backup settings
+backup:
+  catalog_path: /var/lib/ceso/backup.db
+  default_target: datastore   # datastore, nfs, s3
+  compression: gzip           # none, gzip, zstd
+  retention:
+    keep_last: 5
+    keep_daily: 7
+    keep_weekly: 4
+    keep_monthly: 12
+
+# Monitoring
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics
+
+# Security
+security:
+  mode: standard              # restricted, standard, unrestricted
+  audit_log: /var/log/ceso/audit.json
+  ip_allowlist:
+    - 192.168.1.0/24
+    - 10.0.0.0/8

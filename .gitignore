@@ -1,0 +1,8 @@
+
+# Test environment files
+test/.env
+
+# Coverage files
+coverage.out
+*.test
+
