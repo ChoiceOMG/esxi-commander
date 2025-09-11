@@ -1,4 +1,8 @@
-# ESXi Commander
+# ESXi Commander (ceso)
+
+[![CI](https://github.com/ChoiceOMG/esxi-commander/actions/workflows/ci.yml/badge.svg)](https://github.com/ChoiceOMG/esxi-commander/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/r11/esxi-commander)](https://goreportcard.com/report/github.com/r11/esxi-commander)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A production-grade, Ubuntu-focused VMware ESXi orchestrator designed for standalone ESXi hosts without vCenter. ESXi Commander provides a simplified CLI for managing Ubuntu LTS virtual machines with emphasis on security, auditability, and AI agent compatibility.
 
@@ -11,6 +15,36 @@ A production-grade, Ubuntu-focused VMware ESXi orchestrator designed for standal
 - **Production Ready**: Comprehensive testing, monitoring, and backup capabilities
 
 ## Quick Start
+
+### Installation
+
+```bash
+# Download the latest release
+wget https://github.com/ChoiceOMG/esxi-commander/releases/latest/download/ceso-linux-amd64
+chmod +x ceso-linux-amd64
+sudo mv ceso-linux-amd64 /usr/local/bin/ceso
+
+# Or build from source
+git clone https://github.com/ChoiceOMG/esxi-commander.git
+cd esxi-commander
+go build -o ceso cmd/ceso/main.go
+```
+
+### First-Time Setup
+
+Run the interactive setup wizard:
+```bash
+ceso setup
+```
+
+Or create `~/.ceso/config.yaml`:
+```yaml
+esxi:
+  host: "192.168.1.100"
+  user: "root"
+  password: ""  # Use ESXI_PASSWORD env var
+  insecure: true
+```
 
 ### VM Operations
 ```bash

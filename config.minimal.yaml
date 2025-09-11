@@ -1,0 +1,17 @@
+# Minimal ESXi Commander Configuration
+# Quick start configuration with essential settings only
+
+# ESXi Connection (REQUIRED)
+esxi:
+  host: "YOUR_ESXI_IP"        # Replace with your ESXi host IP
+  user: "root"                # ESXi username
+  password: ""                # Set via ESXI_PASSWORD environment variable
+  insecure: true              # Accept self-signed certificates
+
+# VM Defaults (OPTIONAL - sensible defaults)
+vm:
+  defaults:
+    template: "ubuntu-22.04"  # Your default template name
+    cpu: 2
+    memory: 4096              # MB
+    disk: 20                  # GB
