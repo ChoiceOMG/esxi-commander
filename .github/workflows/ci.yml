@@ -2,47 +2,119 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master, main ]
   pull_request:
-    branches: [ main ]
+    branches: [ master, main ]
 
 jobs:
   test:
+    name: Test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22']
+    
     steps:
-    - uses: actions/checkout@v3
-    
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
-    
-    - name: Install dependencies
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
       run: go mod download
-    
+
     - name: Run tests
-      run: go test -v ./...
+      run: go test -v -race -coverprofile=coverage.out ./...
+
+    - name: Calculate coverage
+      run: |
+        go tool cover -func=coverage.out | grep total | awk '{print "Total Coverage: " $3}'
+
+    - name: Upload coverage to Codecov
+      if: matrix.go-version == '1.22'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
     
-    - name: Build
-      run: go build -v ./cmd/ceso
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Build binary
+      run: |
+        go build -v -o ceso cmd/ceso/main.go
+        ./ceso --help
+
+    - name: Run verification script
+      run: |
+        chmod +x scripts/verify-phase3.sh
+        bash scripts/verify-phase3.sh
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
     
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v3
       with:
         version: latest
+        args: --timeout=5m
 
-  build:
+  security:
+    name: Security Scan
     runs-on: ubuntu-latest
-    needs: test
+    
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Go
-      uses: actions/setup-go@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Gosec Security Scanner
+      uses: securego/gosec@master
       with:
-        go-version: '1.21'
-    
-    - name: Build binary
-      run: |
-        CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o ceso ./cmd/ceso
-        ./ceso --version || echo "Version command not implemented yet"
+        args: './...'
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
