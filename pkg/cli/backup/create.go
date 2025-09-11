@@ -15,6 +15,7 @@ import (
 var createFlags struct {
 	compress    bool
 	powerOff    bool
+	hot         bool
 	target      string
 	description string
 }
@@ -34,6 +35,7 @@ to OVF/OVA format and storing it in the configured backup target.`,
 
 	cmd.Flags().BoolVar(&createFlags.compress, "compress", true, "Compress the backup")
 	cmd.Flags().BoolVar(&createFlags.powerOff, "power-off", false, "Power off VM before backup (cold backup)")
+	cmd.Flags().BoolVar(&createFlags.hot, "hot", false, "Create hot backup using snapshots (VM stays running)")
 	cmd.Flags().StringVar(&createFlags.target, "target", "datastore", "Backup target (datastore, nfs, s3)")
 	cmd.Flags().StringVar(&createFlags.description, "description", "", "Backup description")
 
@@ -84,10 +86,16 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 	defer backupManager.Close()
 
+	// Validate flags
+	if createFlags.hot && createFlags.powerOff {
+		return fmt.Errorf("cannot use both --hot and --power-off flags")
+	}
+
 	// Create backup options
 	opts := backup.BackupOptions{
 		VMName:      vmName,
 		PowerOff:    createFlags.powerOff,
+		Hot:         createFlags.hot,
 		Compress:    createFlags.compress,
 		Description: createFlags.description,
 	}
@@ -107,8 +115,12 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	// Create the backup
 	fmt.Printf("Creating backup of VM '%s'...\n", vmName)
-	if createFlags.powerOff {
+	if createFlags.hot {
+		fmt.Println("Creating hot backup using snapshots (VM will stay running)")
+	} else if createFlags.powerOff {
 		fmt.Println("VM will be powered off for cold backup")
+	} else {
+		fmt.Println("Creating backup of VM in current state")
 	}
 
 	backupInfo, err := backupManager.CreateBackup(ctx, opts)
@@ -120,6 +132,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nBackup created successfully:\n")
 	fmt.Printf("  ID:       %s\n", backupInfo.ID)
 	fmt.Printf("  VM:       %s\n", backupInfo.VMName)
+	fmt.Printf("  Type:     %s backup\n", backupInfo.Type)
 	fmt.Printf("  Size:     %.2f MB\n", float64(backupInfo.Size)/(1024*1024))
 	fmt.Printf("  Created:  %s\n", backupInfo.Created.Format("2006-01-02 15:04:05"))
 	fmt.Printf("  Location: %s\n", backupInfo.Location)

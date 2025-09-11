@@ -13,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
 )
 
 type ESXiClient struct {
@@ -122,6 +123,17 @@ func (c *ESXiClient) DefaultFolder(ctx context.Context) (*object.Folder, error) 
 	return folder, nil
 }
 
+func (c *ESXiClient) DefaultHost(ctx context.Context) (*object.HostSystem, error) {
+	hosts, err := c.finder.HostSystemList(ctx, "*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list hosts: %w", err)
+	}
+	if len(hosts) == 0 {
+		return nil, fmt.Errorf("no hosts found")
+	}
+	return hosts[0], nil
+}
+
 func (c *ESXiClient) ListVMs(ctx context.Context) ([]*VM, error) {
 	vms, err := c.finder.VirtualMachineList(ctx, "*")
 	if err != nil {
@@ -147,6 +159,17 @@ func (c *ESXiClient) ListVMs(ctx context.Context) ([]*VM, error) {
 	}
 
 	return result, nil
+}
+
+// GetHostSystem returns the host system (alias for DefaultHost)
+func (c *ESXiClient) GetHostSystem(ctx context.Context) (*object.HostSystem, error) {
+	return c.DefaultHost(ctx)
+}
+
+// RetrieveOne retrieves properties for a single managed object
+func (c *ESXiClient) RetrieveOne(ctx context.Context, ref types.ManagedObjectReference, ps []string, dst interface{}) error {
+	pc := c.client.Client.ServiceContent.PropertyCollector
+	return mo.RetrieveProperties(ctx, c.client.Client, pc, ref, dst)
 }
 
 func (c *ESXiClient) Close() error {

@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/viper"
 	"github.com/r11/esxi-commander/pkg/esxi/client"
 	"github.com/r11/esxi-commander/pkg/esxi/vm"
+	"github.com/r11/esxi-commander/pkg/interactive"
+	"github.com/r11/esxi-commander/pkg/validation"
 )
 
 var (
@@ -32,6 +34,11 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	vmName := args[0]
 	ctx := context.Background()
 
+	// Validate VM name
+	if err := validation.ValidateVMName(vmName); err != nil {
+		return fmt.Errorf("invalid VM name: %w", err)
+	}
+
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {
 		fmt.Printf("[DRY-RUN] Would delete VM '%s'\n", vmName)
@@ -39,11 +46,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if !force {
-		fmt.Printf("⚠️  Are you sure you want to delete VM '%s'? This cannot be undone.\n", vmName)
-		fmt.Print("Type 'yes' to confirm: ")
-		var response string
-		fmt.Scanln(&response)
-		if response != "yes" {
+		if !interactive.ConfirmDeletion("VM", vmName) {
 			fmt.Println("Delete cancelled")
 			return nil
 		}

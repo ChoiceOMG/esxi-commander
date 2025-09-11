@@ -228,6 +228,223 @@ func (o *Operations) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
+// PowerOff powers off a VM (hard power off)
+func (o *Operations) PowerOff(ctx context.Context, vm *object.VirtualMachine) error {
+	start := time.Now()
+	
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.poweroff", map[string]interface{}{
+		"vm": vm.Name(),
+	})
+	
+	task, err := vm.PowerOff(ctx)
+	if err != nil {
+		metrics.RecordVMOperation("poweroff", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("failed to start power off: %w", err)
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		metrics.RecordVMOperation("poweroff", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("power off failed: %w", err)
+	}
+
+	metrics.RecordVMOperation("poweroff", "success", time.Since(start).Seconds())
+	auditCtx.Success()
+	return nil
+}
+
+// Shutdown gracefully shuts down a VM (requires VMware Tools)
+func (o *Operations) Shutdown(ctx context.Context, vm *object.VirtualMachine) error {
+	start := time.Now()
+	
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.shutdown", map[string]interface{}{
+		"vm": vm.Name(),
+	})
+	
+	err := vm.ShutdownGuest(ctx)
+	if err != nil {
+		metrics.RecordVMOperation("shutdown", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("failed to shutdown guest: %w", err)
+	}
+
+	metrics.RecordVMOperation("shutdown", "success", time.Since(start).Seconds())
+	auditCtx.Success()
+	return nil
+}
+
+// Restart restarts a VM
+func (o *Operations) Restart(ctx context.Context, vm *object.VirtualMachine) error {
+	start := time.Now()
+	
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.restart", map[string]interface{}{
+		"vm": vm.Name(),
+	})
+
+	// Try graceful restart first
+	err := vm.RebootGuest(ctx)
+	if err != nil {
+		// Fall back to hard restart
+		task, err := vm.Reset(ctx)
+		if err != nil {
+			metrics.RecordVMOperation("restart", "failure", time.Since(start).Seconds())
+			auditCtx.Failure(err)
+			return fmt.Errorf("failed to restart VM: %w", err)
+		}
+		_, err = task.WaitForResult(ctx, nil)
+		if err != nil {
+			metrics.RecordVMOperation("restart", "failure", time.Since(start).Seconds())
+			auditCtx.Failure(err)
+			return fmt.Errorf("failed to restart VM: %w", err)
+		}
+	}
+
+	metrics.RecordVMOperation("restart", "success", time.Since(start).Seconds())
+	auditCtx.Success()
+	return nil
+}
+
+// Suspend suspends a VM
+func (o *Operations) Suspend(ctx context.Context, vm *object.VirtualMachine) error {
+	start := time.Now()
+	
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.suspend", map[string]interface{}{
+		"vm": vm.Name(),
+	})
+	
+	task, err := vm.Suspend(ctx)
+	if err != nil {
+		metrics.RecordVMOperation("suspend", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("failed to start suspend: %w", err)
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		metrics.RecordVMOperation("suspend", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("suspend failed: %w", err)
+	}
+
+	metrics.RecordVMOperation("suspend", "success", time.Since(start).Seconds())
+	auditCtx.Success()
+	return nil
+}
+
+// Resume resumes a suspended VM (alias for PowerOn)
+func (o *Operations) Resume(ctx context.Context, vm *object.VirtualMachine) error {
+	return o.PowerOn(ctx, vm)
+}
+
+// GetPowerState returns the current power state of a VM
+func (o *Operations) GetPowerState(ctx context.Context, vm *object.VirtualMachine) (types.VirtualMachinePowerState, error) {
+	return vm.PowerState(ctx)
+}
+
+// CreateSnapshot creates a snapshot of a VM
+func (o *Operations) CreateSnapshot(ctx context.Context, vm *object.VirtualMachine, name, description string, memory, quiesce bool) error {
+	start := time.Now()
+	
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.snapshot.create", map[string]interface{}{
+		"vm":          vm.Name(),
+		"name":        name,
+		"memory":      memory,
+		"quiesce":     quiesce,
+	})
+	
+	task, err := vm.CreateSnapshot(ctx, name, description, memory, quiesce)
+	if err != nil {
+		metrics.RecordVMOperation("snapshot.create", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("failed to create snapshot: %w", err)
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		metrics.RecordVMOperation("snapshot.create", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("snapshot creation failed: %w", err)
+	}
+
+	metrics.RecordVMOperation("snapshot.create", "success", time.Since(start).Seconds())
+	auditCtx.Success()
+	return nil
+}
+
+// RemoveSnapshot removes a snapshot
+func (o *Operations) RemoveSnapshot(ctx context.Context, vm *object.VirtualMachine, snapshotRef types.ManagedObjectReference, removeChildren bool) error {
+	start := time.Now()
+	
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.snapshot.remove", map[string]interface{}{
+		"vm":               vm.Name(),
+		"snapshot":         snapshotRef.Value,
+		"remove_children":  removeChildren,
+	})
+	
+	task, err := vm.RemoveSnapshot(ctx, snapshotRef.Value, removeChildren, nil)
+	if err != nil {
+		metrics.RecordVMOperation("snapshot.remove", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("failed to remove snapshot: %w", err)
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		metrics.RecordVMOperation("snapshot.remove", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("snapshot removal failed: %w", err)
+	}
+
+	metrics.RecordVMOperation("snapshot.remove", "success", time.Since(start).Seconds())
+	auditCtx.Success()
+	return nil
+}
+
+// RevertToSnapshot reverts VM to a snapshot
+func (o *Operations) RevertToSnapshot(ctx context.Context, vm *object.VirtualMachine, snapshotRef types.ManagedObjectReference) error {
+	start := time.Now()
+	
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.snapshot.revert", map[string]interface{}{
+		"vm":       vm.Name(),
+		"snapshot": snapshotRef.Value,
+	})
+	
+	task, err := vm.RevertToSnapshot(ctx, snapshotRef.Value, true)
+	if err != nil {
+		metrics.RecordVMOperation("snapshot.revert", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("failed to revert to snapshot: %w", err)
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		metrics.RecordVMOperation("snapshot.revert", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
+		return fmt.Errorf("snapshot revert failed: %w", err)
+	}
+
+	metrics.RecordVMOperation("snapshot.revert", "success", time.Since(start).Seconds())
+	auditCtx.Success()
+	return nil
+}
+
+// ListSnapshots lists all snapshots for a VM
+func (o *Operations) ListSnapshots(ctx context.Context, vm *object.VirtualMachine) ([]types.VirtualMachineSnapshotTree, error) {
+	var vmObj mo.VirtualMachine
+	err := vm.Properties(ctx, vm.Reference(), []string{"snapshot"}, &vmObj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VM properties: %w", err)
+	}
+
+	if vmObj.Snapshot == nil {
+		return []types.VirtualMachineSnapshotTree{}, nil
+	}
+
+	return vmObj.Snapshot.RootSnapshotList, nil
+}
+
 func (o *Operations) GetVMInfo(ctx context.Context, name string) (*client.VM, error) {
 	vm, err := o.client.FindVM(ctx, name)
 	if err != nil {

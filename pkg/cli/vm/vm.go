@@ -16,4 +16,12 @@ func init() {
 	VmCmd.AddCommand(cloneCmd)
 	VmCmd.AddCommand(deleteCmd)
 	VmCmd.AddCommand(infoCmd)
+	VmCmd.AddCommand(startCmd)
+	VmCmd.AddCommand(stopCmd)
+	VmCmd.AddCommand(restartCmd)
+	VmCmd.AddCommand(suspendCmd)
+	VmCmd.AddCommand(resumeCmd)
+	VmCmd.AddCommand(consoleCmd)
+	VmCmd.AddCommand(NewSnapshotCommand())
+	VmCmd.AddCommand(statsCmd)
 }

@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/viper"
 	"github.com/r11/esxi-commander/pkg/cloudinit"
 	"github.com/r11/esxi-commander/pkg/esxi/client"
+	"github.com/r11/esxi-commander/pkg/esxi/pci"
 	"github.com/r11/esxi-commander/pkg/esxi/vm"
+	"github.com/r11/esxi-commander/pkg/validation"
 )
 
 var (
@@ -23,6 +25,7 @@ var (
 	cpu      int
 	memory   int
 	disk     int
+	gpu      string
 )
 
 var createCmd = &cobra.Command{
@@ -41,6 +44,7 @@ func init() {
 	createCmd.Flags().IntVar(&cpu, "cpu", 2, "Number of vCPUs")
 	createCmd.Flags().IntVar(&memory, "memory", 4, "Memory in GB")
 	createCmd.Flags().IntVar(&disk, "disk", 40, "Disk size in GB")
+	createCmd.Flags().StringVar(&gpu, "gpu", "", "PCI device ID for GPU passthrough (e.g., 0000:81:00.0)")
 	
 	createCmd.MarkFlagRequired("template")
 }
@@ -49,6 +53,33 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	vmName := args[0]
 	ctx := context.Background()
 	
+	// Validate inputs before proceeding
+	if err := validation.ValidateVMName(vmName); err != nil {
+		return fmt.Errorf("invalid VM name: %w", err)
+	}
+	
+	if ip != "" {
+		if err := validation.ValidateCIDR(ip); err != nil {
+			return fmt.Errorf("invalid IP address: %w", err)
+		}
+	}
+	
+	if err := validation.ValidateGateway(gateway); err != nil {
+		return fmt.Errorf("invalid gateway: %w", err)
+	}
+	
+	if err := validation.ValidateDNS(dns); err != nil {
+		return fmt.Errorf("invalid DNS: %w", err)
+	}
+	
+	if err := validation.ValidateSSHKey(sshKey); err != nil {
+		return fmt.Errorf("invalid SSH key: %w", err)
+	}
+	
+	if err := validation.ValidateResourceLimits(cpu, memory); err != nil {
+		return fmt.Errorf("invalid resource limits: %w", err)
+	}
+	
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {
 		fmt.Printf("[DRY-RUN] Would create VM '%s' from template '%s'\n", vmName, template)
@@ -56,6 +87,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 			fmt.Printf("[DRY-RUN]   IP: %s\n", ip)
 		}
 		fmt.Printf("[DRY-RUN]   Resources: %d vCPU, %d GB RAM, %d GB disk\n", cpu, memory, disk)
+		if gpu != "" {
+			fmt.Printf("[DRY-RUN]   GPU: %s\n", gpu)
+		}
 		return nil
 	}
 	
@@ -119,6 +153,24 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create VM: %w", err)
 	}
 	
+	// Attach GPU if specified (VM must be powered off for PCI attachment)
+	if gpu != "" {
+		fmt.Printf("Attaching GPU device %s...\n", gpu)
+		pciAttachment := pci.NewAttachment(esxi)
+		
+		// Validate GPU device first
+		if err := pciAttachment.ValidateAttachment(ctx, vmName, gpu); err != nil {
+			return fmt.Errorf("GPU validation failed: %w", err)
+		}
+		
+		// Attach the GPU device
+		if err := pciAttachment.AttachDevice(ctx, vmName, gpu); err != nil {
+			return fmt.Errorf("failed to attach GPU: %w", err)
+		}
+		
+		fmt.Printf("✅ GPU %s attached successfully\n", gpu)
+	}
+	
 	duration := time.Since(start)
 	
 	if err := vmOps.PowerOn(ctx, newVM); err != nil {
@@ -128,6 +180,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✅ VM '%s' created successfully in %v\n", vmName, duration)
 	fmt.Printf("   Template: %s\n", template)
 	fmt.Printf("   Resources: %d vCPU, %d GB RAM, %d GB disk\n", cpu, memory, disk)
+	if gpu != "" {
+		fmt.Printf("   GPU: %s\n", gpu)
+	}
 	if ip != "" {
 		fmt.Printf("   IP: %s\n", ip)
 	}

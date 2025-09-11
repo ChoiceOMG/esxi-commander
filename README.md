@@ -8,11 +8,17 @@ A production-grade, Ubuntu-focused VMware ESXi orchestrator designed for standal
 
 ## Features
 
-- **Simple CLI Interface**: 8 core commands for VM and backup operations
+### Core Operations
+- **VM Management**: Complete lifecycle management with power operations, snapshots, and GPU passthrough
+- **Backup System**: Hot/cold backups with retention policies and restore capabilities
+- **Host Monitoring**: Resource statistics, health checks, and system information
+- **PCI Device Management**: GPU passthrough support for NVIDIA, AMD, and Intel devices
+
+### Production Features
 - **Ubuntu LTS Focus**: Optimized for Ubuntu virtual machines with cloud-init integration
 - **No vCenter Required**: Direct ESXi host management for standalone environments
 - **Security First**: Built-in audit logging, AI agent sandboxing, and access controls
-- **Production Ready**: Comprehensive testing, monitoring, and backup capabilities
+- **Quality of Life**: Input validation, interactive confirmations, progress indicators, and batch operations
 
 ## Quick Start
 
@@ -49,31 +55,78 @@ esxi:
 ### VM Operations
 ```bash
 # Create a new VM with cloud-init configuration
-ceso vm create myvm --template ubuntu-22.04 --ip 192.168.1.100/24 --ssh-key ~/.ssh/id_rsa.pub
+ceso vm create myvm --template ubuntu-22.04 --ip 192.168.1.100/24 --ssh-key ~/.ssh/id_rsa.pub --cpu 4 --memory 8
 
-# List all VMs
-ceso vm list
+# Create VM with GPU passthrough
+ceso vm create gpu-workstation --template ubuntu-22.04 --gpu 0000:81:00.0 --cpu 8 --memory 32
 
-# Get VM information
+# VM power management
+ceso vm start myvm
+ceso vm stop myvm --graceful
+ceso vm restart myvm
+ceso vm start --all  # Start all powered-off VMs
+
+# VM information and monitoring
+ceso vm list --json
 ceso vm info myvm
+ceso vm stats myvm
+ceso vm console myvm
 
-# Clone an existing VM
+# VM snapshots
+ceso vm snapshot create myvm "pre-update" --memory --quiesce
+ceso vm snapshot list myvm
+ceso vm snapshot revert myvm "pre-update"
+ceso vm snapshot delete myvm "pre-update"
+
+# Clone and delete operations
 ceso vm clone myvm myvm-clone --ip 192.168.1.101/24
-
-# Delete a VM
-ceso vm delete myvm
+ceso vm delete myvm --force  # Skip confirmation
 ```
 
 ### Backup Operations
 ```bash
-# Create a backup
-ceso backup create myvm
+# Cold backup (VM powered off)
+ceso backup create myvm --power-off --compress
 
-# List backups
-ceso backup list
+# Hot backup (VM stays running using snapshots)
+ceso backup create myvm --hot --compress --description "Weekly backup"
 
-# Restore from backup
-ceso backup restore backup-123 --as-new restored-vm
+# Backup management
+ceso backup list --json
+ceso backup verify backup-uuid-123
+ceso backup delete backup-uuid-123
+
+# Restore with network reconfiguration
+ceso backup restore backup-uuid-123 --as-new restored-vm \
+  --ip 192.168.1.200/24 --gateway 192.168.1.1 --power-on
+
+# Backup retention and pruning
+ceso backup prune --keep-last 5 --vm myvm
+ceso backup prune --keep-days 30 --dry-run  # Preview deletions
+```
+
+### Host Monitoring
+```bash
+# Host information and health
+ceso host info --json
+ceso host health
+ceso host stats
+
+# PCI device management
+ceso pci list --type gpu
+ceso pci info 0000:81:00.0
+```
+
+### Utility Commands
+```bash
+# Show practical examples
+ceso examples
+
+# Validate operations without executing
+ceso vm create test-vm --template ubuntu-22.04 --dry-run
+
+# Interactive setup
+ceso setup wizard
 ```
 
 ## Architecture
@@ -99,10 +152,13 @@ ESXi Commander is built with Go and uses:
 - Standard mode for human operators
 - Time-limited promotion workflow with human approval
 
-### Extensible Backup System
-- Local datastore storage (Phase 1)
-- Pluggable architecture for future S3/NFS/SFTP support
-- Incremental backup capabilities
+### Backup System
+- Hot backups using VMware snapshots (zero downtime)
+- Cold backups with optional VM power-off
+- Compression support (gzip) for space efficiency
+- Automated retention policies with pruning
+- Cross-platform restore with network reconfiguration
+- BoltDB-based backup catalog with metadata tracking
 
 ## Security Features
 
@@ -110,6 +166,73 @@ ESXi Commander is built with Go and uses:
 - **Access Control**: IP allowlists and short-lived SSH certificates  
 - **Secret Management**: OS keyring with encrypted file fallback
 - **AI Safety**: Restricted command execution with promotion workflow
+
+## Command Reference
+
+### VM Commands
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `ceso vm create <name>` | Create new VM from template | `--template`, `--ip`, `--cpu`, `--memory`, `--gpu` |
+| `ceso vm clone <source> <dest>` | Clone existing VM | `--ip`, `--gateway`, `--dns` |
+| `ceso vm list` | List all VMs | `--json` |
+| `ceso vm info <name>` | Get VM details | `--json` |
+| `ceso vm stats <name>` | Show resource usage | `--json` |
+| `ceso vm delete <name>` | Delete VM | `--force` |
+| `ceso vm start <name>` | Power on VM | `--all` |
+| `ceso vm stop <name>` | Power off VM | `--graceful`, `--all` |
+| `ceso vm restart <name>` | Restart VM | `--graceful` |
+| `ceso vm suspend <name>` | Suspend VM | |
+| `ceso vm resume <name>` | Resume suspended VM | |
+| `ceso vm console <name>` | Get console access info | |
+
+### VM Snapshot Commands
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `ceso vm snapshot create <vm> <name>` | Create snapshot | `--memory`, `--quiesce`, `--description` |
+| `ceso vm snapshot list <vm>` | List snapshots | `--json` |
+| `ceso vm snapshot revert <vm> <name>` | Revert to snapshot | |
+| `ceso vm snapshot delete <vm> <name>` | Delete snapshot | `--children` |
+
+### Backup Commands
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `ceso backup create <vm>` | Create backup | `--hot`, `--power-off`, `--compress`, `--description` |
+| `ceso backup list` | List backups | `--json` |
+| `ceso backup restore <id>` | Restore backup | `--as-new`, `--ip`, `--gateway`, `--power-on` |
+| `ceso backup delete <id>` | Delete backup | |
+| `ceso backup verify <id>` | Verify backup integrity | |
+| `ceso backup prune` | Clean old backups | `--keep-last`, `--keep-days`, `--vm`, `--dry-run` |
+
+### Host Commands
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `ceso host info` | Host system information | `--json` |
+| `ceso host health` | Health status check | `--json` |
+| `ceso host stats` | Resource statistics | `--json` |
+
+### PCI Commands
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `ceso pci list` | List PCI devices | `--type`, `--available`, `--json` |
+| `ceso pci info <device>` | Device details | `--json` |
+
+### Template Commands
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `ceso template list` | List available templates | `--json` |
+| `ceso template validate <name>` | Validate template | |
+
+### Utility Commands
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `ceso examples` | Show usage examples | |
+| `ceso setup wizard` | Interactive setup | |
+
+### Global Flags
+- `--config <file>`: Specify config file
+- `--json`: Output in JSON format
+- `--dry-run`: Preview operations without execution
+- `--help`: Show command help
 
 ## Development
 
