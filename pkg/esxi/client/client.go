@@ -13,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
 )
 
 type ESXiClient struct {
@@ -158,6 +159,17 @@ func (c *ESXiClient) ListVMs(ctx context.Context) ([]*VM, error) {
 	}
 
 	return result, nil
+}
+
+// GetHostSystem returns the host system (alias for DefaultHost)
+func (c *ESXiClient) GetHostSystem(ctx context.Context) (*object.HostSystem, error) {
+	return c.DefaultHost(ctx)
+}
+
+// RetrieveOne retrieves properties for a single managed object
+func (c *ESXiClient) RetrieveOne(ctx context.Context, ref types.ManagedObjectReference, ps []string, dst interface{}) error {
+	pc := c.client.Client.ServiceContent.PropertyCollector
+	return mo.RetrieveProperties(ctx, c.client.Client, pc, ref, dst)
 }
 
 func (c *ESXiClient) Close() error {

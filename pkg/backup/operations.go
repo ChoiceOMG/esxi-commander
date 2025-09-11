@@ -53,6 +53,7 @@ type DatastoreTarget struct {
 type BackupOptions struct {
 	VMName      string
 	PowerOff    bool
+	Hot         bool
 	Compress    bool
 	Target      BackupTarget
 	Description string
@@ -63,6 +64,13 @@ type RestoreOptions struct {
 	NewName     string
 	PowerOn     bool
 	Guestinfo   map[string]string // For re-IP
+}
+
+type PruneOptions struct {
+	VMName   string // Empty string means all VMs
+	KeepLast int    // Keep last N backups per VM
+	KeepDays int    // Keep backups newer than N days
+	DryRun   bool   // Don't actually delete, just show what would be deleted
 }
 
 type BackupInfo struct {
@@ -112,12 +120,18 @@ func (m *BackupManager) CreateBackup(ctx context.Context, opts BackupOptions) (*
 	// Generate backup ID
 	backupID := fmt.Sprintf("backup-%s-%s", opts.VMName, uuid.New().String()[:8])
 
+	// Determine backup type
+	backupType := "cold"
+	if opts.Hot {
+		backupType = "hot"
+	}
+
 	// Create catalog entry
 	entry := &storage.BackupEntry{
 		ID:        backupID,
 		VMName:    opts.VMName,
 		Timestamp: time.Now(),
-		Type:      "cold",
+		Type:      backupType,
 		Status:    "pending",
 		Metadata: map[string]string{
 			"description": opts.Description,
@@ -145,8 +159,38 @@ func (m *BackupManager) CreateBackup(ctx context.Context, opts BackupOptions) (*
 
 	wasRunning := vmMo.Runtime.PowerState == types.VirtualMachinePowerStatePoweredOn
 
-	// Power off VM if requested and running
-	if opts.PowerOff && wasRunning {
+	var snapshotName string
+	var backupErr error
+
+	// Handle hot backup with snapshot
+	if opts.Hot && wasRunning {
+		// Create snapshot for hot backup
+		snapshotName = fmt.Sprintf("backup-snapshot-%s", backupID)
+		fmt.Printf("Creating snapshot '%s' for hot backup...\n", snapshotName)
+		
+		err := m.vmOps.CreateSnapshot(ctx, vmObj, snapshotName, "Backup snapshot", false, true)
+		if err != nil {
+			m.catalog.UpdateBackupStatus(backupID, "failed")
+			return nil, fmt.Errorf("failed to create backup snapshot: %w", err)
+		}
+
+		// Cleanup snapshot after backup
+		defer func() {
+			if snapshotName != "" {
+				// Find and remove the snapshot
+				snapshots, err := m.vmOps.ListSnapshots(ctx, vmObj)
+				if err == nil {
+					for _, snapshot := range snapshots {
+						if snapshot.Name == snapshotName {
+							m.vmOps.RemoveSnapshot(ctx, vmObj, snapshot.Snapshot, false)
+							break
+						}
+					}
+				}
+			}
+		}()
+	} else if opts.PowerOff && wasRunning {
+		// Power off VM for cold backup
 		task, err := vmObj.PowerOff(ctx)
 		if err != nil {
 			m.catalog.UpdateBackupStatus(backupID, "failed")
@@ -156,19 +200,17 @@ func (m *BackupManager) CreateBackup(ctx context.Context, opts BackupOptions) (*
 			m.catalog.UpdateBackupStatus(backupID, "failed")
 			return nil, fmt.Errorf("failed to wait for power off: %w", err)
 		}
-	}
 
-	// Perform backup
-	var backupErr error
-	defer func() {
-		// Power on VM if it was running
-		if opts.PowerOff && wasRunning && backupErr == nil {
-			task, _ := vmObj.PowerOn(ctx)
-			if task != nil {
-				task.Wait(ctx)
+		// Power on VM after backup
+		defer func() {
+			if opts.PowerOff && wasRunning && backupErr == nil {
+				task, _ := vmObj.PowerOn(ctx)
+				if task != nil {
+					task.Wait(ctx)
+				}
 			}
-		}
-	}()
+		}()
+	}
 
 	// Export VM to OVF
 	location, size, checksum, err := m.exportVM(ctx, vmObj, backupID, opts)
@@ -199,7 +241,7 @@ func (m *BackupManager) CreateBackup(ctx context.Context, opts BackupOptions) (*
 		Created:     entry.Timestamp,
 		Location:    location,
 		Status:      "completed",
-		Type:        "cold",
+		Type:        backupType,
 		Description: opts.Description,
 	}, nil
 }
@@ -335,6 +377,97 @@ func (m *BackupManager) VerifyBackup(ctx context.Context, backupID string) error
 	}
 
 	return nil
+}
+
+// PruneBackups removes old backups based on retention policy
+func (m *BackupManager) PruneBackups(ctx context.Context, opts PruneOptions) (int, error) {
+	start := time.Now()
+	
+	// Get all backups from catalog
+	allBackups, err := m.catalog.ListBackups("")
+	if err != nil {
+		return 0, fmt.Errorf("failed to list backups: %w", err)
+	}
+
+	// Group backups by VM name
+	backupsByVM := make(map[string][]*storage.BackupEntry)
+	for _, backup := range allBackups {
+		// Skip if filtering by VM and this backup doesn't match
+		if opts.VMName != "" && backup.VMName != opts.VMName {
+			continue
+		}
+		backupsByVM[backup.VMName] = append(backupsByVM[backup.VMName], backup)
+	}
+
+	// Sort backups by timestamp (newest first) for each VM
+	for vmName := range backupsByVM {
+		backups := backupsByVM[vmName]
+		// Sort by timestamp descending (newest first)
+		for i := 0; i < len(backups)-1; i++ {
+			for j := i + 1; j < len(backups); j++ {
+				if backups[i].Timestamp.Before(backups[j].Timestamp) {
+					backups[i], backups[j] = backups[j], backups[i]
+				}
+			}
+		}
+	}
+
+	// Determine which backups to delete
+	var toDelete []*storage.BackupEntry
+	cutoffTime := time.Now().AddDate(0, 0, -opts.KeepDays)
+
+	for vmName, backups := range backupsByVM {
+		fmt.Printf("Processing backups for VM '%s' (%d total):\n", vmName, len(backups))
+
+		for i, backup := range backups {
+			shouldDelete := false
+			reason := ""
+
+			// Keep if within the keep-last count
+			if i < opts.KeepLast {
+				fmt.Printf("  Keeping %s (backup %d of %d most recent)\n", backup.ID, i+1, opts.KeepLast)
+				continue
+			}
+
+			// Keep if within the keep-days window
+			if backup.Timestamp.After(cutoffTime) {
+				fmt.Printf("  Keeping %s (within %d days)\n", backup.ID, opts.KeepDays)
+				continue
+			}
+
+			// Mark for deletion
+			shouldDelete = true
+			reason = fmt.Sprintf("older than %d days and beyond %d most recent", opts.KeepDays, opts.KeepLast)
+
+			if shouldDelete {
+				toDelete = append(toDelete, backup)
+				if opts.DryRun {
+					fmt.Printf("  Would delete %s (%s)\n", backup.ID, reason)
+				} else {
+					fmt.Printf("  Deleting %s (%s)\n", backup.ID, reason)
+				}
+			}
+		}
+	}
+
+	// Delete the backups (unless dry run)
+	deletedCount := 0
+	for _, backup := range toDelete {
+		if !opts.DryRun {
+			if err := m.DeleteBackup(ctx, backup.ID); err != nil {
+				fmt.Printf("  Failed to delete %s: %v\n", backup.ID, err)
+				continue
+			}
+		}
+		deletedCount++
+	}
+
+	// Record metrics
+	if !opts.DryRun {
+		metrics.RecordBackupOperation("prune", "success", time.Since(start).Seconds())
+	}
+
+	return deletedCount, nil
 }
 
 // exportVM exports a VM to a backup file

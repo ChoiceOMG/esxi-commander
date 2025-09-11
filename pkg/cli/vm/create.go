@@ -13,6 +13,7 @@ import (
 	"github.com/r11/esxi-commander/pkg/esxi/client"
 	"github.com/r11/esxi-commander/pkg/esxi/pci"
 	"github.com/r11/esxi-commander/pkg/esxi/vm"
+	"github.com/r11/esxi-commander/pkg/validation"
 )
 
 var (
@@ -51,6 +52,33 @@ func init() {
 func runCreate(cmd *cobra.Command, args []string) error {
 	vmName := args[0]
 	ctx := context.Background()
+	
+	// Validate inputs before proceeding
+	if err := validation.ValidateVMName(vmName); err != nil {
+		return fmt.Errorf("invalid VM name: %w", err)
+	}
+	
+	if ip != "" {
+		if err := validation.ValidateCIDR(ip); err != nil {
+			return fmt.Errorf("invalid IP address: %w", err)
+		}
+	}
+	
+	if err := validation.ValidateGateway(gateway); err != nil {
+		return fmt.Errorf("invalid gateway: %w", err)
+	}
+	
+	if err := validation.ValidateDNS(dns); err != nil {
+		return fmt.Errorf("invalid DNS: %w", err)
+	}
+	
+	if err := validation.ValidateSSHKey(sshKey); err != nil {
+		return fmt.Errorf("invalid SSH key: %w", err)
+	}
+	
+	if err := validation.ValidateResourceLimits(cpu, memory); err != nil {
+		return fmt.Errorf("invalid resource limits: %w", err)
+	}
 	
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	if dryRun {

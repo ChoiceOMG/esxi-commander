@@ -6,3 +6,13 @@ test/.env
 coverage.out
 *.test
 
+# Configuration files (may contain credentials)
+config.yaml
+.ceso/
+*.ceso.yaml
+
+# Backup and temporary files
+*.db
+*.backup
+*.tmp
+
