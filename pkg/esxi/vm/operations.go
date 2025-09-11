@@ -3,11 +3,14 @@ package vm
 import (
 	"context"
 	"fmt"
+	"time"
 	
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+	"github.com/r11/esxi-commander/pkg/audit"
 	"github.com/r11/esxi-commander/pkg/esxi/client"
+	"github.com/r11/esxi-commander/pkg/metrics"
 )
 
 type Operations struct {
@@ -28,13 +31,28 @@ func NewOperations(c *client.ESXiClient) *Operations {
 }
 
 func (o *Operations) CreateFromTemplate(ctx context.Context, opts *CreateOptions) (*object.VirtualMachine, error) {
+	start := time.Now()
+	
+	// Start audit logging
+	auditCtx := audit.GetLogger().LogOperation(ctx, "vm.create", map[string]interface{}{
+		"name":     opts.Name,
+		"template": opts.Template,
+		"cpu":      opts.CPU,
+		"memory":   opts.Memory,
+		"disk":     opts.Disk,
+	})
+	
 	template, err := o.client.FindVM(ctx, opts.Template)
 	if err != nil {
+		metrics.RecordVMOperation("create", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
 		return nil, fmt.Errorf("template not found: %w", err)
 	}
 
 	pool, err := o.client.DefaultResourcePool(ctx)
 	if err != nil {
+		metrics.RecordVMOperation("create", "failure", time.Since(start).Seconds())
+		auditCtx.Failure(err)
 		return nil, fmt.Errorf("failed to get resource pool: %w", err)
 	}
 
@@ -89,8 +107,11 @@ func (o *Operations) CreateFromTemplate(ctx context.Context, opts *CreateOptions
 }
 
 func (o *Operations) CloneVM(ctx context.Context, sourceName, destName string, guestinfo map[string]string) (*object.VirtualMachine, error) {
+	start := time.Now()
+	
 	source, err := o.client.FindVM(ctx, sourceName)
 	if err != nil {
+		metrics.RecordVMOperation("clone", "failure", time.Since(start).Seconds())
 		return nil, fmt.Errorf("source VM not found: %w", err)
 	}
 
@@ -144,14 +165,17 @@ func (o *Operations) CloneVM(ctx context.Context, sourceName, destName string, g
 
 	task, err := source.Clone(ctx, folder, destName, cloneSpec)
 	if err != nil {
+		metrics.RecordVMOperation("clone", "failure", time.Since(start).Seconds())
 		return nil, fmt.Errorf("failed to start clone: %w", err)
 	}
 
 	info, err := task.WaitForResult(ctx, nil)
 	if err != nil {
+		metrics.RecordVMOperation("clone", "failure", time.Since(start).Seconds())
 		return nil, fmt.Errorf("clone failed: %w", err)
 	}
 
+	metrics.RecordVMOperation("clone", "success", time.Since(start).Seconds())
 	return object.NewVirtualMachine(o.client.Client(), info.Result.(types.ManagedObjectReference)), nil
 }
 
@@ -170,8 +194,11 @@ func (o *Operations) PowerOn(ctx context.Context, vm *object.VirtualMachine) err
 }
 
 func (o *Operations) Delete(ctx context.Context, name string) error {
+	start := time.Now()
+	
 	vm, err := o.client.FindVM(ctx, name)
 	if err != nil {
+		metrics.RecordVMOperation("delete", "failure", time.Since(start).Seconds())
 		return fmt.Errorf("VM not found: %w", err)
 	}
 
@@ -187,14 +214,17 @@ func (o *Operations) Delete(ctx context.Context, name string) error {
 
 	task, err := vm.Destroy(ctx)
 	if err != nil {
+		metrics.RecordVMOperation("delete", "failure", time.Since(start).Seconds())
 		return fmt.Errorf("failed to start destroy: %w", err)
 	}
 
 	_, err = task.WaitForResult(ctx, nil)
 	if err != nil {
+		metrics.RecordVMOperation("delete", "failure", time.Since(start).Seconds())
 		return fmt.Errorf("destroy failed: %w", err)
 	}
 
+	metrics.RecordVMOperation("delete", "success", time.Since(start).Seconds())
 	return nil
 }
 
