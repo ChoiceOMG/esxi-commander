@@ -122,6 +122,17 @@ func (c *ESXiClient) DefaultFolder(ctx context.Context) (*object.Folder, error) 
 	return folder, nil
 }
 
+func (c *ESXiClient) DefaultHost(ctx context.Context) (*object.HostSystem, error) {
+	hosts, err := c.finder.HostSystemList(ctx, "*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list hosts: %w", err)
+	}
+	if len(hosts) == 0 {
+		return nil, fmt.Errorf("no hosts found")
+	}
+	return hosts[0], nil
+}
+
 func (c *ESXiClient) ListVMs(ctx context.Context) ([]*VM, error) {
 	vms, err := c.finder.VirtualMachineList(ctx, "*")
 	if err != nil {
