@@ -1,40 +1,56 @@
 package vm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"github.com/r11/esxi-commander/pkg/esxi/client"
 )
 
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List virtual machines",
 	Long:  `List all virtual machines on the ESXi host`,
-	Run:   runList,
+	RunE:  runList,
 }
 
-var jsonOutput bool
+func runList(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
 
-func init() {
-	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
-}
-
-func runList(cmd *cobra.Command, args []string) {
-	// Mock data for Phase 1
-	vms := []VM{
-		{Name: "ubuntu-web-01", Status: "running", IP: "192.168.1.100", CPU: 2, RAM: 4},
-		{Name: "ubuntu-db-01", Status: "running", IP: "192.168.1.101", CPU: 4, RAM: 8},
-		{Name: "ubuntu-test", Status: "stopped", IP: "", CPU: 1, RAM: 2},
+	esxiCfg := &client.Config{
+		Host:     viper.GetString("esxi.host"),
+		User:     viper.GetString("esxi.user"),
+		Password: os.Getenv("ESXI_PASSWORD"),
+		Insecure: viper.GetBool("esxi.insecure"),
+		Timeout:  30 * time.Second,
 	}
 
+	if esxiCfg.Password == "" {
+		esxiCfg.Password = viper.GetString("esxi.password")
+	}
+
+	esxi, err := client.NewClient(esxiCfg)
+	if err != nil {
+		return fmt.Errorf("failed to connect to ESXi: %w", err)
+	}
+	defer esxi.Close()
+
+	vms, err := esxi.ListVMs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list VMs: %w", err)
+	}
+
+	jsonOutput, _ := cmd.Flags().GetBool("json")
 	if jsonOutput {
 		output, err := json.MarshalIndent(vms, "", "  ")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error marshaling JSON: %w", err)
 		}
 		fmt.Println(string(output))
 	} else {
@@ -45,8 +61,10 @@ func runList(cmd *cobra.Command, args []string) {
 			if ip == "" {
 				ip = "-"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n", vm.Name, vm.Status, ip, vm.CPU, vm.RAM)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n", vm.Name, vm.Status, ip, vm.CPU, vm.Memory)
 		}
 		w.Flush()
 	}
+
+	return nil
 }

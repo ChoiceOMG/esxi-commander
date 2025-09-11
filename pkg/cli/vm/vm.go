@@ -13,4 +13,7 @@ var VmCmd = &cobra.Command{
 func init() {
 	VmCmd.AddCommand(listCmd)
 	VmCmd.AddCommand(createCmd)
+	VmCmd.AddCommand(cloneCmd)
+	VmCmd.AddCommand(deleteCmd)
+	VmCmd.AddCommand(infoCmd)
 }
