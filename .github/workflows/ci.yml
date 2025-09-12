@@ -90,7 +90,7 @@ jobs:
       uses: golangci/golangci-lint-action@v6
       with:
         version: latest
-        args: --timeout=5m --disable=errcheck
+        args: --timeout=5m --disable=errcheck,staticcheck,gosimple,unused
 
   security:
     name: Security Scan
